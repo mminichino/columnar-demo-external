@@ -1,0 +1,66 @@
+[tool.poetry]
+name = "columnardemo"
+description = "Columnar Demo"
+version = "1.0.0"
+readme = "README.md"
+authors = ["Michael Minichino <info@unix.us.com>"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: Apache Software License",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Python Modules"
+]
+keywords = ["couchbase", "columnar", "analytics"]
+packages = [
+    { include = "columnardemo" }
+]
+
+[tool.poetry.urls]
+"Homepage" = "https://github.com/mminichino/columnar-demo-external"
+
+[tool.poetry.scripts]
+demo_run = "columnardemo.streamlit_exec:main"
+
+[[tool.poetry.source]]
+name = "pypi-public"
+url = "https://pypi.org/simple/"
+
+[tool.poetry.dependencies]
+python = ">=3.10,<4"
+couchbase = ">=4.3.0"
+streamlit = ">=1.37.1"
+pandas = ">=2.2.2"
+plotly = ">=5.23.0"
+
+[tool.poetry.group.test.dependencies]
+pytest = ">=7.0.0"
+
+[tool.poetry.group.dev.dependencies]
+bumpversion = "^0.6.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+addopts = "-rE --no-header -v -p no:warnings"
+log_file = "pytest.log"
+log_file_level = "DEBUG"
+pythonpath = [
+    ".",
+    "tests"
+]
+testpaths = [
+    "tests",
+]
+python_classes = [
+    "Test*"
+]
+python_files = [
+    "test_[0-9]*.py"
+]
