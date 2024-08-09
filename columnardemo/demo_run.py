@@ -76,11 +76,6 @@ def main():
             results = session.analytics_query(top_spender_query)
             hhc = pd.DataFrame(results)
 
-            colorcode = []
-
-            for i in range(0, 13):
-                colorcode.append(hhc['c' + str(i)].tolist())
-
             fig = go.Figure(
                 data=[go.Table(columnorder=[0, 1], columnwidth=[18, 12],
                                header=dict(
@@ -95,10 +90,13 @@ def main():
                         values=[hhc[K].tolist() for K in hhc.columns],
                         font=dict(size=10),
                         align=['left', 'center'],
-                        fill_color=colorcode,
                         line_color='rgba(255,255,255,0.2)',
                         height=20))])
 
             fig.update_layout(title_text="Top Customers by Spend", title_font_color='#264653', title_x=0, margin=dict(l=0, r=10, b=10, t=30), height=600)
 
             p1.plotly_chart(fig, use_container_width=True)
+
+
+if __name__ == '__main__':
+    main()
