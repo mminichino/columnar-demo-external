@@ -1,0 +1,1 @@
+CREATE SCOPE analytics.sample_analytics IF NOT EXISTS

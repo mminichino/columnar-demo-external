@@ -1,12 +1,20 @@
 ##
 ##
 
+import math
 import argparse
+import os.path
+import base64
 import streamlit as st
 import time
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import pydeck as pdk
+from pathlib import Path
+from pandas import DataFrame
+import folium
+from streamlit_folium import st_folium
 from columnardemo.columnar_driver import CBSession
 
 
@@ -19,6 +27,46 @@ def parse_args():
     parser.add_argument('-s', '--scope', action='store', help="Scope", default="_default")
     options = parser.parse_args()
     return options
+
+
+def center_coordinate(df: DataFrame):
+    x = 0.0
+    y = 0.0
+    z = 0.0
+
+    for i, coord in df.iterrows():
+        latitude = math.radians(coord['coordinates'][1])
+        longitude = math.radians(coord['coordinates'][0])
+
+        x += math.cos(latitude) * math.cos(longitude)
+        y += math.cos(latitude) * math.sin(longitude)
+        z += math.sin(latitude)
+
+    total = len(df)
+
+    x = x / total
+    y = y / total
+    z = z / total
+
+    central_longitude = math.atan2(y, x)
+    central_square_root = math.sqrt(x * x + y * y)
+    central_latitude = math.atan2(z, central_square_root)
+
+    mean_location = {
+        'latitude': math.degrees(central_latitude),
+        'longitude': math.degrees(central_longitude)
+    }
+
+    return mean_location
+
+
+def get_color(x):
+    if x >= 20:
+        return [0, 128, 255]
+    elif x < 20 or x >= 15:
+        return [0, 255, 0]
+    else:
+        return [0, 0, 0]
 
 
 def main():
@@ -53,7 +101,7 @@ def main():
 
     if st.session_state.auth:
         top_spender_query = """
-        SELECT c.name, SUM(amt.amount) AS total_spend
+        SELECT c.name, SUM(TO_NUMBER(amt.total)) AS total_spend
         FROM `customers` c
         JOIN `accounts` a ON ANY acc IN c.accounts SATISFIES acc = a.account_id END
         JOIN `transactions` t ON a.account_id = t.account_id
@@ -63,14 +111,22 @@ def main():
         LIMIT 10
         """
 
-        t1, t2 = st.columns((0.07, 1))
+        restaurant_query = """
+        SELECT r.address.coord AS coordinates, g.score, r.name, r.address.street, r.cuisine, r.borough
+        FROM restaurants AS r
+        UNNEST r.grades AS g
+        WHERE g.grade = 'A'
+        ORDER BY g.score DESC
+        LIMIT 100
+        """
 
-        # t1.image('images/favicon.ico', width=120)
-        t2.title("Customer Dashboard")
-        t2.markdown("https://github/mminichino")
+        image_path = os.path.join(os.path.dirname(Path(__file__)), 'images', 'logo.png')
+        st.image(image_path, width=80)
+        st.title("Demo Dashboard")
+        st.markdown("https://github/mminichino/columnar-demo-external")
 
         with st.spinner('Updating Report...'):
-            p1, p2 = st.columns((3, 1.7))
+            f1, f2, f3 = st.columns([1, 1, 1])
 
             session = CBSession(st.session_state.hostname, st.session_state.username, st.session_state.password).session().bucket_name(st.session_state.bucket).scope_name(st.session_state.scope)
             results = session.analytics_query(top_spender_query)
@@ -79,23 +135,110 @@ def main():
             fig = go.Figure(
                 data=[go.Table(columnorder=[0, 1], columnwidth=[18, 12],
                                header=dict(
-                                   values=list(hhc.columns),
-                                   font=dict(size=11, color='white'),
+                                   values=list(item.title() for item in hhc.columns),
+                                   font=dict(size=20, color='white'),
                                    fill_color='#264653',
                                    line_color='rgba(255,255,255,0.2)',
                                    align=['left', 'center'],
-                                   height=20
-                               )
-                               , cells=dict(
-                        values=[hhc[K].tolist() for K in hhc.columns],
-                        font=dict(size=10),
-                        align=['left', 'center'],
-                        line_color='rgba(255,255,255,0.2)',
-                        height=20))])
+                                   height=30),
+                               cells=dict(
+                                   values=[hhc[K].tolist() for K in hhc.columns],
+                                   font=dict(size=20),
+                                   align=['left', 'center'],
+                                   format=[[None], [',.2f']],
+                                   prefix=["", "$"],
+                                   line_color='rgba(255,255,255,0.2)',
+                                   height=30))])
 
-            fig.update_layout(title_text="Top Customers by Spend", title_font_color='#264653', title_x=0, margin=dict(l=0, r=10, b=10, t=30), height=600)
+            fig.update_layout(title=dict(text="Top Customers by Spend", font=dict(size=30, color='#264653')), title_x=0, margin=dict(l=0, r=10, b=10, t=50), height=500, width=600)
 
-            p1.plotly_chart(fig, use_container_width=True)
+            f2.plotly_chart(fig, use_container_width=True)
+
+            c1, c2 = st.columns([1, 1])
+
+            results = session.analytics_query(restaurant_query)
+            df = pd.DataFrame(results)
+
+            ddf = df[['score', 'name', 'street', 'cuisine', 'borough']]
+            fig = go.Figure(
+                data=[go.Table(columnorder=[0, 1, 2, 3, 4], columnwidth=[8, 18, 18, 18, 12],
+                               header=dict(
+                                   values=[item.title() for item in ddf.columns.to_list()],
+                                   font=dict(size=14, color='white'),
+                                   fill_color='#264653',
+                                   line_color='rgba(255,255,255,0.2)',
+                                   align='center',
+                                   height=28),
+                               cells=dict(
+                                   values=[ddf[col].to_list() for col in ddf.columns],
+                                   font=dict(size=14),
+                                   align='center',
+                                   line_color='rgba(255,255,255,0.2)',
+                                   height=28))])
+
+            fig.update_layout(title=dict(text="Highly Rated Restaurants", font=dict(size=30, color='#264653')), title_x=0, margin=dict(l=0, r=10, b=10, t=50), height=1000)
+
+            c2.plotly_chart(fig, use_container_width=True)
+
+            center = center_coordinate(df)
+
+            view_state = pdk.ViewState(
+                latitude=center['latitude'],
+                longitude=center['longitude'],
+                zoom=12,
+                pitch=0,
+                height=900,
+                width=900
+            )
+
+            marker_path = os.path.join(os.path.dirname(Path(__file__)), 'images', 'marker_red.png')
+
+            binary_fc = open(marker_path, 'rb').read()
+            base64_utf8_str = base64.b64encode(binary_fc).decode('utf-8')
+
+            ext = marker_path.split('.')[-1]
+            dataurl = f'data:image/{ext};base64,{base64_utf8_str}'
+
+            icon_data = {
+                "url": dataurl,
+                "width": 128,
+                "height": 128,
+                "anchorY": 128,
+            }
+
+            df['icon_data'] = [icon_data for _ in range(df.shape[0])]
+
+            layer = pdk.Layer(
+                "IconLayer",
+                data=df,
+                get_position='coordinates',
+                get_icon='icon_data',
+                get_size=4,
+                size_scale=12,
+                get_radius=100,
+                pickable=True,
+            )
+
+            tooltip = {
+                "html": """
+                <b>Name:</b> {name} <br/>
+                <b>Address:</b> {street} <br/>
+                <b>Cuisine:</b> {cuisine} <br/>
+                <b>Borough:</b> {borough}
+                """,
+                "style": {"backgroundColor": "steelblue", "color": "white"}
+            }
+
+            r = pdk.Deck(
+                map_style="mapbox://styles/mapbox/streets-v12",
+                initial_view_state=view_state,
+                layers=[layer],
+                tooltip=tooltip,
+            )
+
+            new_title = '<p style="font-family: &quot;Source Sans Pro&quot;, sans-serif; font-size: 30px; color: #264653; opacity: 1; font-weight: normal; white-space: pre;">Restaurant Map</p>'
+            c1.markdown(new_title, unsafe_allow_html=True)
+            c1.pydeck_chart(r, use_container_width=False)
 
 
 if __name__ == '__main__':
