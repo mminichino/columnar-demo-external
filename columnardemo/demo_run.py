@@ -158,9 +158,11 @@ def main():
                                    line_color='rgba(255,255,255,0.2)',
                                    height=30))])
 
-            fig.update_layout(title=dict(text="Top Customers by Spend", font=dict(size=30, color='#264653')), title_x=0, margin=dict(l=0, r=10, b=10, t=50), height=500, width=600)
+            fig.update_layout(title=dict(text="Top Customers by Spend", font=dict(size=30)), title_x=0, margin=dict(l=0, r=10, b=10, t=50), height=500, width=600)
 
             f2.plotly_chart(fig, use_container_width=True)
+
+            st.markdown("<h2 style='text-align: center;'>Restaurant Data</h2>", unsafe_allow_html=True)
 
             b1, b2, b3 = st.columns((4, 1, 1))
             page_count = b3.selectbox("Page Size", options=[50, 75, 100])
@@ -216,7 +218,7 @@ def main():
                                    line_color='rgba(255,255,255,0.2)',
                                    height=28))])
 
-            fig.update_layout(height=1200, margin=dict(l=0, r=0, b=0, t=10))
+            fig.update_layout(height=1500, margin=dict(l=0, r=0, b=0, t=10))
 
             c2.plotly_chart(fig, use_container_width=True)
 
