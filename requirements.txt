@@ -6,3 +6,4 @@ watchdog>=4.0.1
 pydeck>=0.9.1
 folium>=0.17.0
 streamlit-folium>=0.22.0
+numpy>=1.26.4

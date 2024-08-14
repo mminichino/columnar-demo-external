@@ -1,21 +1,20 @@
 ##
 ##
 
+import warnings
 import math
 import argparse
 import os.path
 import base64
 import streamlit as st
-import time
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import pydeck as pdk
 from pathlib import Path
 from pandas import DataFrame
-import folium
-from streamlit_folium import st_folium
 from columnardemo.columnar_driver import CBSession
+
+warnings.filterwarnings("ignore")
 
 
 def parse_args():
@@ -69,6 +68,20 @@ def get_color(x):
         return [0, 0, 0]
 
 
+@st.cache_data
+def get_record_count(hostname, username, password, bucket, scope):
+    restaurant_count_query = """SELECT raw count(*) FROM restaurants"""
+    session = CBSession(hostname, username, password).session().bucket_name(bucket).scope_name(scope)
+    return session.analytics_query(restaurant_count_query)[0]
+
+
+@st.cache_data
+def get_cuisine_types(hostname, username, password, bucket, scope):
+    cuisine_type_query = """SELECT DISTINCT(r.cuisine) FROM restaurants AS r ORDER BY r.cuisine"""
+    session = CBSession(hostname, username, password).session().bucket_name(bucket).scope_name(scope)
+    return [r.get('cuisine') for r in session.analytics_query(cuisine_type_query)]
+
+
 def main():
     options = parse_args()
 
@@ -76,6 +89,8 @@ def main():
 
     if "auth" not in st.session_state:
         st.session_state.auth = False
+    if 'cuisine_select' not in st.session_state:
+        st.session_state['cuisine_select'] = None
 
     if not st.session_state.auth:
         host_name = st.text_input("Couchbase Server Hostname", options.host, autocomplete="on")
@@ -111,24 +126,17 @@ def main():
         LIMIT 10
         """
 
-        restaurant_query = """
-        SELECT r.address.coord AS coordinates, g.score, r.name, r.address.street, r.cuisine, r.borough
-        FROM restaurants AS r
-        UNNEST r.grades AS g
-        WHERE g.grade = 'A'
-        ORDER BY g.score DESC
-        LIMIT 100
-        """
-
         image_path = os.path.join(os.path.dirname(Path(__file__)), 'images', 'logo.png')
         st.image(image_path, width=80)
         st.title("Demo Dashboard")
         st.markdown("https://github/mminichino/columnar-demo-external")
 
-        with st.spinner('Updating Report...'):
+        with ((st.spinner('Loading Data'))):
             f1, f2, f3 = st.columns([1, 1, 1])
 
-            session = CBSession(st.session_state.hostname, st.session_state.username, st.session_state.password).session().bucket_name(st.session_state.bucket).scope_name(st.session_state.scope)
+            session = CBSession(st.session_state.hostname,
+                                st.session_state.username,
+                                st.session_state.password).session().bucket_name(st.session_state.bucket).scope_name(st.session_state.scope)
             results = session.analytics_query(top_spender_query)
             hhc = pd.DataFrame(results)
 
@@ -154,10 +162,42 @@ def main():
 
             f2.plotly_chart(fig, use_container_width=True)
 
+            b1, b2, b3 = st.columns((4, 1, 1))
+            page_count = b3.selectbox("Page Size", options=[50, 75, 100])
+            page_number = b2.number_input("Page", min_value=1, max_value=50000, step=1)
+
             c1, c2 = st.columns([1, 1])
 
-            results = session.analytics_query(restaurant_query)
-            df = pd.DataFrame(results)
+            restaurant_count = get_record_count(st.session_state.hostname, st.session_state.username, st.session_state.password, st.session_state.bucket, st.session_state.scope)
+            cuisine_types = get_cuisine_types(st.session_state.hostname, st.session_state.username, st.session_state.password, st.session_state.bucket, st.session_state.scope)
+
+            cuisine_list = ["Any"]
+            cuisine_list.extend(cuisine_types)
+            st.session_state.cuisine_select = c2.selectbox("Select Cuisine", cuisine_list)
+            if st.session_state.cuisine_select and st.session_state.cuisine_select != "Any":
+                restaurant_query = f"""
+                     SELECT r.address.coord AS coordinates, g.score, r.name, r.address.street, r.cuisine, r.borough
+                     FROM restaurants AS r
+                     UNNEST r.grades AS g
+                     WHERE g.grade = 'A' AND r.cuisine = '{st.session_state.cuisine_select}'
+                     ORDER BY g.score DESC
+                     LIMIT {page_count}
+                     OFFSET {(page_number - 1) * page_count}
+                     """
+                results = session.analytics_query(restaurant_query)
+                df = pd.DataFrame(results)
+            else:
+                restaurant_query = f"""
+                      SELECT r.address.coord AS coordinates, g.score, r.name, r.address.street, r.cuisine, r.borough
+                      FROM restaurants AS r
+                      UNNEST r.grades AS g
+                      WHERE g.grade = 'A'
+                      ORDER BY g.score DESC
+                      LIMIT {page_count}
+                      OFFSET {(page_number - 1) * page_count}
+                      """
+                results = session.analytics_query(restaurant_query)
+                df = pd.DataFrame(results)
 
             ddf = df[['score', 'name', 'street', 'cuisine', 'borough']]
             fig = go.Figure(
@@ -176,7 +216,7 @@ def main():
                                    line_color='rgba(255,255,255,0.2)',
                                    height=28))])
 
-            fig.update_layout(title=dict(text="Highly Rated Restaurants", font=dict(size=30, color='#264653')), title_x=0, margin=dict(l=0, r=10, b=10, t=50), height=1000)
+            fig.update_layout(height=1200, margin=dict(l=0, r=0, b=0, t=10))
 
             c2.plotly_chart(fig, use_container_width=True)
 
@@ -187,7 +227,7 @@ def main():
                 longitude=center['longitude'],
                 zoom=12,
                 pitch=0,
-                height=900,
+                height=1200,
                 width=900
             )
 
@@ -236,9 +276,11 @@ def main():
                 tooltip=tooltip,
             )
 
-            new_title = '<p style="font-family: &quot;Source Sans Pro&quot;, sans-serif; font-size: 30px; color: #264653; opacity: 1; font-weight: normal; white-space: pre;">Restaurant Map</p>'
-            c1.markdown(new_title, unsafe_allow_html=True)
             c1.pydeck_chart(r, use_container_width=False)
+
+            e1, e2 = st.columns((1, 1))
+            total_pages = (int(restaurant_count / page_count) if int(restaurant_count / page_count) > 0 else 1)
+            e2.markdown(f"Page **{page_number}** of **{total_pages}**")
 
 
 if __name__ == '__main__':
